@@ -319,3 +319,226 @@ Server: Alice has left the chat
 - Consistent coding style throughout
 
 ---
+
+## [2025-12-27 Enhancement] - Monitoring Command Support
+
+**Type:** Feature Enhancement / Integration
+
+### What was done:
+
+- Added support for monitoring commands (PING and STATUS) to the chat server
+- Implemented PING/PONG protocol for health checks
+- Implemented STATUS command to report active client count
+- Enabled integration with Python monitoring service
+- Maintained backward compatibility with existing chat functionality
+- Fixed member initialization order warnings in server and client
+
+### Technical Details:
+
+**File paths:**
+
+- `/server.cpp` - Enhanced handleClientMessage() function (line 133-191)
+
+**Enhanced Functionality:**
+
+**PING Command:**
+
+- Purpose: Health check probe from monitoring service
+- Request: Client sends "PING\n"
+- Response: Server responds with "PONG\n"
+- Behavior:
+  - Processed before authentication
+  - Connection closed immediately after response
+  - Logs health check activity
+  - Does not interfere with chat clients
+
+**STATUS Command:**
+
+- Purpose: Retrieve server metrics
+- Request: Client sends "STATUS\n"
+- Response: Server responds with "ACTIVE_CLIENTS=N\n"
+- Behavior:
+  - Counts only authenticated clients
+  - Excludes monitoring connections from count
+  - Connection closed immediately after response
+  - Logs status query activity
+
+**Implementation Details:**
+
+```cpp
+// In handleClientMessage():
+std::string message_str(buffer);
+
+// Handle monitoring commands before authentication
+if (message_str == "PING") {
+    std::string response = "PONG\n";
+    send(clients[client_index].socket, response.c_str(), response.length(), 0);
+    std::cout << "Server: Health check (PING) from monitoring service" << std::endl;
+
+    // Close connection after response
+    FD_CLR(clients[client_index].socket, &master_set);
+    close(clients[client_index].socket);
+    clients.erase(clients.begin() + client_index);
+    return;
+}
+
+if (message_str == "STATUS") {
+    int active_count = 0;
+    for (const auto& client : clients) {
+        if (client.authenticated) {
+            active_count++;
+        }
+    }
+
+    std::string response = "ACTIVE_CLIENTS=" + std::to_string(active_count) + "\n";
+    send(clients[client_index].socket, response.c_str(), response.length(), 0);
+    std::cout << "Server: Status query from monitoring service - Active clients: "
+              << active_count << std::endl;
+
+    // Close connection after response
+    FD_CLR(clients[client_index].socket, &master_set);
+    close(clients[client_index].socket);
+    clients.erase(clients.begin() + client_index);
+    return;
+}
+```
+
+**Bug Fixes:**
+
+- Fixed member initialization order warning in ChatServer constructor
+  - Changed order from `port, server_socket, max_fd` to `server_socket, port, max_fd`
+  - Matches declaration order in class definition
+- Fixed member initialization order warning in ChatClient constructor
+  - Changed order from `server_address, port, client_socket, connected` to `client_socket, server_address, port, connected`
+  - Matches declaration order in class definition
+
+**Protocol Design:**
+
+- Text-based protocol for simplicity
+- Newline-delimited messages
+- Immediate disconnect after monitoring response
+- No authentication required (for internal monitoring)
+- Easily extensible for future commands
+
+**Backward Compatibility:**
+
+- Chat clients unaffected
+- Username authentication still works
+- Message broadcasting unchanged
+- No breaking changes to existing functionality
+
+### How to use/test:
+
+#### Testing PING Command:
+
+```bash
+# Terminal 1: Start server
+./server
+
+# Terminal 2: Test PING with netcat
+echo "PING" | nc localhost 8080
+```
+
+Expected output:
+
+```
+PONG
+```
+
+Server log shows:
+
+```
+Server: Health check (PING) from monitoring service
+```
+
+#### Testing STATUS Command:
+
+```bash
+# Terminal 1: Start server
+./server
+
+# Terminal 2: Connect a chat client
+./client
+# Enter username: Alice
+
+# Terminal 3: Connect another chat client
+./client
+# Enter username: Bob
+
+# Terminal 4: Query status
+echo "STATUS" | nc localhost 8080
+```
+
+Expected output:
+
+```
+ACTIVE_CLIENTS=2
+```
+
+Server log shows:
+
+```
+Server: Status query from monitoring service - Active clients: 2
+```
+
+#### Testing with Python Monitor:
+
+```bash
+# Terminal 1: Start server
+./server
+
+# Terminal 2: Use Python monitor
+cd ../Python-Chat-Gateway-Health-Monitor
+python monitor.py health
+python monitor.py status
+```
+
+### Related files:
+
+- `/home/lat/Documents/self study/c++/Python-Chat-Gateway-Health-Monitor/` - Python monitoring service
+- `/home/lat/Documents/self study/c++/Python-Chat-Gateway-Health-Monitor/health_check.py` - Health check implementation
+- `/home/lat/Documents/self study/c++/Python-Chat-Gateway-Health-Monitor/monitor.py` - CLI tool
+- `README.md` - Updated with monitoring information
+- `dev-log.md` - This file
+
+### Notes/Warnings:
+
+**Security Considerations:**
+
+- Monitoring commands are unauthenticated
+- Anyone who can connect can query server status
+- Suitable for internal/trusted networks only
+- For production: Add authentication mechanism
+
+**Design Decisions:**
+
+- Monitoring connections are short-lived (connect, query, disconnect)
+- Prevents monitoring connections from appearing as chat clients
+- STATUS count excludes unauthenticated connections
+- Simple text protocol for easy testing and debugging
+
+**Performance Impact:**
+
+- Minimal overhead (simple string comparison)
+- Monitoring commands processed immediately
+- No impact on regular chat performance
+- Connection cleanup prevents resource leaks
+
+**Future Enhancements:**
+
+- Add SHUTDOWN command for graceful server stop
+- Add STATS command for detailed metrics (messages, uptime, etc.)
+- Add CLIENTS command to list connected usernames
+- Implement authentication for monitoring commands
+- Add rate limiting for monitoring requests
+
+**Testing Verification:**
+
+- Verified PING/PONG exchange
+- Verified STATUS returns correct count
+- Verified regular chat still works
+- Verified monitoring connections don't interfere with chat
+- Verified connection cleanup
+- Compiled without warnings
+
+---

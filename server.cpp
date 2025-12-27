@@ -132,10 +132,46 @@ private:
 
         // Remove newline character
         buffer[strcspn(buffer, "\n")] = 0;
+        
+        std::string message_str(buffer);
+
+        // Handle monitoring commands (PING, STATUS)
+        if (message_str == "PING") {
+            std::string response = "PONG\n";
+            send(clients[client_index].socket, response.c_str(), response.length(), 0);
+            std::cout << "Server: Health check (PING) from monitoring service" << std::endl;
+            
+            // Close connection after PING response
+            FD_CLR(clients[client_index].socket, &master_set);
+            close(clients[client_index].socket);
+            clients.erase(clients.begin() + client_index);
+            return;
+        }
+        
+        if (message_str == "STATUS") {
+            // Count authenticated clients (exclude monitoring connections)
+            int active_count = 0;
+            for (const auto& client : clients) {
+                if (client.authenticated) {
+                    active_count++;
+                }
+            }
+            
+            std::string response = "ACTIVE_CLIENTS=" + std::to_string(active_count) + "\n";
+            send(clients[client_index].socket, response.c_str(), response.length(), 0);
+            std::cout << "Server: Status query from monitoring service - Active clients: " 
+                      << active_count << std::endl;
+            
+            // Close connection after STATUS response
+            FD_CLR(clients[client_index].socket, &master_set);
+            close(clients[client_index].socket);
+            clients.erase(clients.begin() + client_index);
+            return;
+        }
 
         // Handle username setup for new clients
         if (!clients[client_index].authenticated) {
-            clients[client_index].username = std::string(buffer);
+            clients[client_index].username = message_str;
             clients[client_index].authenticated = true;
             
             std::cout << "Server: Client " << clients[client_index].username 
@@ -152,7 +188,7 @@ private:
 
         // Broadcast message to all other clients
         std::string message = clients[client_index].username + ": " + 
-                             std::string(buffer) + "\n";
+                             message_str + "\n";
         std::cout << message;
         broadcastMessage(message, clients[client_index].socket);
     }
