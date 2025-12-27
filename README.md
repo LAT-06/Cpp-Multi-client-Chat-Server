@@ -239,8 +239,7 @@ Cpp-Multi-client-Chat-Server/
 ├── client.cpp              # Client implementation
 ├── Makefile                # Build configuration
 ├── README.md               # This file
-├── dev-log.md              # Development log and documentation
-└── prompt_requirement.txt  # Project documentation guidelines
+└── dev-log.md              # Development log and documentation
 ```
 
 ## Development
